@@ -2,7 +2,7 @@
 A study to reveal the differentially expressed genes during dauer and reproductive stages of the roundworm Caenorhabditis elegans
 This project involves differential gene expression analysis using the DESeq2 package in R. The code reads count data from Excel files, merges the data, performs normalization, and runs differential expression analysis across multiple conditions. The results are then exported and visualized through MA plots, PCA, and histograms.
 
-## Read mapping, feature counting, library normalization, quality checks, and differential gene expression analysis were performed using R version 3.1.0, bowtie2 version 2.2.3, SAMtools and DESeq
+## Read mapping, feature counting, library normalization, quality checks, and differential gene expression analysis were performed using R version 3.1.0, bowtie2 version 2.2.3, SAMtools, HTSeq-count and DESeq
 
 
 ## Data Input
