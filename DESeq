@@ -1,1 +1,182 @@
 
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("DESeq2")
+library(DESeq2)
+library(openxlsx)
+
+#The C. elegans reference genome and gene transfer format files were downloaded from Ensembl release 75 and genome assembly WBcel235
+#Indexing was done using bowtie2 using :  bowtie2-build webcel235.faCel_WBcel235_75
+# Pre-processing : 
+## Collect metadata of experimental design
+metadata <- read.csv("/metadata_for_DESeq.csv")
+
+# Align the reads using tophat2 to the reference genome
+gf = "Caenorhabditis_elegans.WBcel235.75.gtf"
+bowind = "Cel_WBcel235_75"
+cmd = with(metadata,paste("nohup tophat2 -G", gf, "-p 5 -o",
+                          LibraryName, bowind, fastq1, fastq2))
+
+# Organize, sort and index the BAM files and create SAM files
+for(i in seq_len(nrow(metadata))) {
+  lib = metadata$LibraryName[i]
+  ob = file.path(lib, "accepted_hits.bam")
+  #sort by name, convert to SAM for htseq-count
+  cat(paste0("nohup samtools sort -n ",ob," ",lib,"_sn"),"\n")
+
+#Once the BAM files are sorted, HTSeq-count is used to generate the count matrix, which counts how many reads align to each gene.
+#Once we have the sorted BAM files, you use a tool like  HTSeq-count/featureCounts to generate a count matrix. This matrix shows how many reads map to each gene or feature. The count matrix is the input for the next step - differential expression analysis.
+#*featureCounts is faster, more efficient, especially with large datasets. Ideal for general RNA-Seq workflows.
+#___________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________
+
+counts_data <- read.xlsx("/FeatureCounts/Excel_counts/counts_data.xlsx")
+# Store Gene IDs in a vector
+gene_ids_vector <- counts_data$Geneid
+counts_data$Geneid <- NULL
+colData <- read.xlsx("/metadata_for_DESeq.xlsx")
+head(counts_data)
+
+rownames(colData) <- colnames(counts_data)
+all(colnames(counts_data) %in% rownames(colData))
+all(colnames(counts_data) == rownames(colData))
+
+
+library(DESeq2)
+## Inspect sample relationships
+dds <- DESeqDataSetFromMatrix(countData = counts_data, 
+                              colData = colData,
+                              design = ~ condition)
+dds <- DESeq(dds)
+dds = estimateSizeFactors(dds)
+sizeFactors(dds)
+normalized_counts <- counts(dds, normalized = TRUE)
+head(counts(dds, normalized = TRUE))
+
+# Assign gene IDs back to normalized counts
+rownames(normalized_counts) <- gene_ids_vector
+
+# View the resulting data
+View(normalized_counts)
+write.csv(counts(dds, normalized = TRUE), 
+          file="/FeatureCounts/Excel_counts/DESeq_normalizedcounts2.csv")
+
+
+## Inspect sample relationships using PCA 
+ddsB = estimateDispersions(dds)
+vsd = varianceStabilizingTransformation(ddsB)
+p = plotPCA(vsd,intgroup=c("condition","LibraryLayout"))
+
+
+# Estimate dispersion
+dds = estimateDispersions(dds)
+plotDispEsts(dds)
+
+# Perform test for differential expression
+library(DESeq2)
+dds <- DESeq(dds)
+counts_data <- read.xlsx("/FeatureCounts/Excel_counts/counts_data.xlsx")
+# Store Gene IDs in a vector
+gene_ids_vector <- counts_data$Geneid
+
+
+res1 <- results(dds, contrast = c("condition", "noDA24","noDA26"))
+gene_ids_df <- data.frame(GeneID = gene_ids_vector)
+# Combine data frames by row names
+res1 <- cbind(gene_ids_df, res1)
+print(res1)
+write.xlsx(res1, file = "/FeatureCounts/Excel_counts/RES/res1.xlsx", rowNames = TRUE)
+
+res2 <- results(dds, contrast = c("condition", "noDA24","noDA34"))
+gene_ids_df <- data.frame(GeneID = gene_ids_vector)
+# Combine data frames by row names
+res2 <- cbind(gene_ids_df, res2)
+print(res2)
+write.xlsx(res2, file = "/FeatureCounts/Excel_counts/RES/res2.xlsx", rowNames = TRUE)
+
+res3 <- results(dds, contrast = c("condition", "noDA24","noDA60"))
+gene_ids_df <- data.frame(GeneID = gene_ids_vector)
+# Combine data frames by row names
+res3 <- cbind(gene_ids_df, res3)
+print(res3)
+write.xlsx(res3, file = "/RES/res3.xlsx", rowNames = TRUE)
+
+.... and more till:
+res12 <- results(dds, contrast = c("condition", "DA34","noDA60"))
+gene_ids_df <- data.frame(GeneID = gene_ids_vector)
+# Combine data frames by row names
+res12 <- cbind(gene_ids_df, res12)
+print(res12)
+write.xlsx(res12, file = "/RES/res12.xlsx", rowNames = TRUE)
+res12_read<- read.xlsx("/FeatureCounts/Excel_counts/res12.xlsx", sheet = 1)
+View(res12_read)
+#___________________________________________________________________________________________________________________________________________________
+#Consider res12 : this contains the comparison between L4 and dauer stages
+
+res12_read<- read.xlsx("/FeatureCounts/Excel_counts/RES/res12.xlsx", sheet = 1)
+
+
+# Plot differential expression against expression amount
+library(DESeq2)
+plotMA(res12, ylim=c(-2,2))
+points(res1$log2FoldChange[res1$padj < 0.01], res1$baseMean[res1$padj < 0.01], col = "blue")
+
+#To view the records 
+# Identify rows without NAs in padj and meet the condition
+valid_rows <- which(!is.na(res12$padj) & res12$padj < 0.01)
+
+# Subset the data based on the condition res12$padj < 0.01
+subset_data <- res12[valid_rows, c("log2FoldChange", "baseMean")]
+
+#plotMA of res12
+title(main="Genes differentially expressed between L4 and dauer", 
+      cex.main=2) #title and size of title
+mtext("mean of normalized counts",side=1,line=2.7,cex=1.5) #axis title
+mtext(expression(log[2]~fold~change),side=2,line=2.2,cex=1.5) #axis title
+
+
+#__________________________________________________________________________________________
+## Threshold differential expression using padj < 0.01
+res1Sig = res1[which(res1$padj < 0.01),]
+write.xlsx(res12Sig, file = "/Significant/res1Sig.xlsx", rowNames = TRUE)
+
+res2Sig = res2[which(res2$padj < 0.01),]
+write.xlsx(res2Sig, file = /Significant/res2Sig.xlsx", rowNames = TRUE)
+
+#... similarly for others
+
+res12Sig = res12[which(res12$padj < 0.01),]
+write.xlsx(res12Sig, file = "/Significant/res12Sig.xlsx", rowNames = TRUE)
+
+#___________________________________________________________________________________________________________________________________________
+## Tabulate the number of differentially expressed genes
+table1 <- table(res1$padj < 0.01)
+table(res2$padj < 0.01)
+table(res3$padj < 0.01)
+table(res4$padj < 0.01)
+table(res5$padj < 0.01)
+table(res6$padj < 0.01)
+table(res7$padj < 0.01)
+table(res8$padj < 0.01)
+table(res9$padj < 0.01)
+table(res10$padj < 0.01)
+table(res11$padj < 0.01)
+table(res12$padj < 0.01)
+#_____________________________________________________________________________________________________________________________________
+
+#Histogram
+hist(res1$pvalue,breaks=100)
+hist(res2$pvalue,breaks=100)
+hist(res3$pvalue,breaks=100)
+hist(res4$pvalue,breaks=100)
+hist(res5$pvalue,breaks=100)
+hist(res6$pvalue,breaks=100)
+hist(res7$pvalue,breaks=100)
+hist(res8$pvalue,breaks=100)
+hist(res9$pvalue,breaks=100)
+hist(res10$pvalue,breaks=100)
+hist(res11$pvalue,breaks=100)
+hist(res12$pvalue,breaks=100)
+
+
+
+
